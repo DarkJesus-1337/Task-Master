@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -34,6 +35,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,6 +45,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import de.syntax_institut.taskmanager.data.model.Task
 import de.syntax_institut.taskmanager.data.model.TaskPriority
+import de.syntax_institut.taskmanager.data.model.User
 import de.syntax_institut.taskmanager.utils.DateUtils
 import java.util.Calendar
 
@@ -51,6 +54,8 @@ import java.util.Calendar
 fun AddEditTaskDialog(
     task: Task? = null,
     categories: List<String> = emptyList(),
+    users: List<User> = emptyList(),
+    currentUserId: Long = 0L,
     onDismiss: () -> Unit,
     onConfirm: (Task) -> Unit
 ) {
@@ -58,20 +63,22 @@ fun AddEditTaskDialog(
     var description by remember { mutableStateOf(task?.description ?: "") }
     var category by remember { mutableStateOf(task?.category ?: "") }
     var priority by remember { mutableStateOf(task?.priority ?: TaskPriority.MEDIUM) }
+    var selectedUserId by remember { mutableLongStateOf(task?.userId ?: currentUserId) }
     var hasDeadline by remember { mutableStateOf(task?.deadlineTimestamp != null) }
     var deadlineTimestamp by remember { mutableStateOf(task?.deadlineTimestamp) }
-    
+
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var showCategoryDropdown by remember { mutableStateOf(false) }
     var showPriorityDropdown by remember { mutableStateOf(false) }
-    
+    var showUserDropdown by remember { mutableStateOf(false) }
+
     val keyboardController = LocalSoftwareKeyboardController.current
-    
+
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = deadlineTimestamp ?: System.currentTimeMillis()
     )
-    
+
     val timePickerState = rememberTimePickerState(
         initialHour = if (deadlineTimestamp != null) {
             Calendar.getInstance().apply { timeInMillis = deadlineTimestamp!! }.get(Calendar.HOUR_OF_DAY)
@@ -83,8 +90,8 @@ fun AddEditTaskDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { 
-            Text(if (task == null) "Neue Aufgabe erstellen" else "Aufgabe bearbeiten") 
+        title = {
+            Text(if (task == null) "Neue Aufgabe erstellen" else "Aufgabe bearbeiten")
         },
         text = {
             Column(
@@ -100,9 +107,9 @@ fun AddEditTaskDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
@@ -111,9 +118,79 @@ fun AddEditTaskDialog(
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 3
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
+                if (users.isNotEmpty()) {
+                    ExposedDropdownMenuBox(
+                        expanded = showUserDropdown,
+                        onExpandedChange = { showUserDropdown = !showUserDropdown }
+                    ) {
+                        TextField(
+                            value = users.find { it.id == selectedUserId }?.username ?: "Benutzer wählen",
+                            onValueChange = { },
+                            label = { Text("Zugeordneter Benutzer") },
+                            readOnly = true,
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = "Benutzer",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showUserDropdown) },
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryEditable, true)
+                                .fillMaxWidth(),
+                            colors = ExposedDropdownMenuDefaults.textFieldColors()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = showUserDropdown,
+                            onDismissRequest = { showUserDropdown = false }
+                        ) {
+                            users.forEach { user ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Person,
+                                                contentDescription = null,
+                                                tint = if (user.id == currentUserId) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                }
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = user.username,
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                                if (user.id == currentUserId) {
+                                                    Text(
+                                                        text = "Aktueller Benutzer",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedUserId = user.id
+                                        showUserDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
                 ExposedDropdownMenuBox(
                     expanded = showCategoryDropdown,
                     onExpandedChange = { showCategoryDropdown = !showCategoryDropdown }
@@ -144,9 +221,9 @@ fun AddEditTaskDialog(
                         }
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 ExposedDropdownMenuBox(
                     expanded = showPriorityDropdown,
                     onExpandedChange = { showPriorityDropdown = !showPriorityDropdown }
@@ -172,7 +249,7 @@ fun AddEditTaskDialog(
                     ) {
                         TaskPriority.entries.forEach { prio ->
                             DropdownMenuItem(
-                                text = { 
+                                text = {
                                     Text(when (prio) {
                                         TaskPriority.LOW -> "🟢 Niedrig"
                                         TaskPriority.MEDIUM -> "🟡 Normal"
@@ -188,9 +265,9 @@ fun AddEditTaskDialog(
                         }
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -202,16 +279,16 @@ fun AddEditTaskDialog(
                     )
                     Switch(
                         checked = hasDeadline,
-                        onCheckedChange = { 
+                        onCheckedChange = {
                             hasDeadline = it
                             if (!it) deadlineTimestamp = null
                         }
                     )
                 }
-                
+
                 if (hasDeadline) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     Card(
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -232,9 +309,9 @@ fun AddEditTaskDialog(
                                         deadlineTimestamp?.let { DateUtils.formatDate(it) } ?: "Datum"
                                     )
                                 }
-                                
+
                                 Spacer(modifier = Modifier.width(8.dp))
-                                
+
                                 Button(
                                     onClick = { showTimePicker = true },
                                     modifier = Modifier.weight(1f)
@@ -244,7 +321,7 @@ fun AddEditTaskDialog(
                                     )
                                 }
                             }
-                            
+
                             if (deadlineTimestamp != null) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
@@ -266,19 +343,21 @@ fun AddEditTaskDialog(
                         description = description.trim(),
                         category = category.trim(),
                         priority = priority,
-                        deadlineTimestamp = deadlineTimestamp
+                        deadlineTimestamp = deadlineTimestamp,
+                        userId = selectedUserId
                     )
                         ?: Task(
                             title = title.trim(),
                             description = description.trim(),
                             category = category.trim(),
                             priority = priority,
-                            deadlineTimestamp = deadlineTimestamp
+                            deadlineTimestamp = deadlineTimestamp,
+                            userId = selectedUserId
                         )
                     onConfirm(newTask)
                     keyboardController?.hide()
                 },
-                enabled = title.isNotBlank()
+                enabled = title.isNotBlank() && selectedUserId != 0L
             ) {
                 Text(if (task == null) "Hinzufügen" else "Speichern")
             }
@@ -294,7 +373,7 @@ fun AddEditTaskDialog(
             }
         }
     )
-    
+
     if (showDatePicker) {
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
@@ -306,16 +385,16 @@ fun AddEditTaskDialog(
                             if (deadlineTimestamp != null) {
                                 calendar.timeInMillis = deadlineTimestamp!!
                             }
-                            
+
                             val selectedCalendar = Calendar.getInstance()
                             selectedCalendar.timeInMillis = selectedDate
-                            
+
                             calendar.set(
                                 selectedCalendar.get(Calendar.YEAR),
                                 selectedCalendar.get(Calendar.MONTH),
                                 selectedCalendar.get(Calendar.DAY_OF_MONTH)
                             )
-                            
+
                             deadlineTimestamp = calendar.timeInMillis
                         }
                         showDatePicker = false
@@ -333,7 +412,7 @@ fun AddEditTaskDialog(
             DatePicker(state = datePickerState)
         }
     }
-    
+
     if (showTimePicker) {
         TimePickerDialog(
             onDismissRequest = { showTimePicker = false },
@@ -346,12 +425,12 @@ fun AddEditTaskDialog(
                         } else {
                             calendar.timeInMillis = System.currentTimeMillis()
                         }
-                        
+
                         calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
                         calendar.set(Calendar.MINUTE, timePickerState.minute)
                         calendar.set(Calendar.SECOND, 0)
                         calendar.set(Calendar.MILLISECOND, 0)
-                        
+
                         deadlineTimestamp = calendar.timeInMillis
                         showTimePicker = false
                     }
@@ -369,4 +448,3 @@ fun AddEditTaskDialog(
         }
     }
 }
-

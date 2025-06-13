@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -41,11 +42,14 @@ import androidx.compose.ui.unit.dp
 import de.syntax_institut.taskmanager.R
 import de.syntax_institut.taskmanager.data.model.Task
 import de.syntax_institut.taskmanager.data.model.TaskPriority
+import de.syntax_institut.taskmanager.data.model.User
 import de.syntax_institut.taskmanager.utils.DateUtils
 
 @Composable
 fun TaskItem(
     task: Task,
+    assignedUser: User? = null,
+    currentUserId: Long = 0L,
     onToggleCompletion: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit = {}
@@ -54,6 +58,7 @@ fun TaskItem(
 
     val isOverdue = task.deadlineTimestamp?.let { DateUtils.isOverdue(it) } == true && !task.isCompleted
     val daysUntil = task.deadlineTimestamp?.let { DateUtils.getDaysUntilDeadline(it) }
+    val isAssignedToOtherUser = assignedUser != null && assignedUser.id != currentUserId
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -62,6 +67,7 @@ fun TaskItem(
                 task.isCompleted -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 isOverdue -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
                 daysUntil != null && daysUntil <= 1 -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                isAssignedToOtherUser -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
                 else -> MaterialTheme.colorScheme.surface
             }
         ),
@@ -128,6 +134,48 @@ fun TaskItem(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
+                    }
+
+                    if (assignedUser != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isAssignedToOtherUser) {
+                                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)
+                                    } else {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    }
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Person,
+                                contentDescription = "Zugeordneter Benutzer",
+                                tint = if (isAssignedToOtherUser) {
+                                    MaterialTheme.colorScheme.secondary
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isAssignedToOtherUser) {
+                                    "Zugeordnet an: ${assignedUser.username}"
+                                } else {
+                                    "Zugeordnet an: ${assignedUser.username} (Sie)"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isAssignedToOtherUser) {
+                                    MaterialTheme.colorScheme.secondary
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            )
+                        }
                     }
                 }
 

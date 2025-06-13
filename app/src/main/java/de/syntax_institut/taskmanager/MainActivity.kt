@@ -11,7 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
-import de.syntax_institut.taskmanager.ui.screens.TodoScreen
+import de.syntax_institut.taskmanager.ui.screens.MainScreen
+import de.syntax_institut.taskmanager.ui.theme.TaskManagerTheme
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "todo_settings")
 
@@ -19,11 +20,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
-            ) {
-                TodoScreen()
+            TaskManagerTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MainScreen()
+                }
             }
         }
     }

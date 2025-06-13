@@ -1,6 +1,7 @@
 package de.syntax_institut.taskmanager.data.database
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -14,14 +15,17 @@ interface UserDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(user: User)
 
-    @Query("SELECT * FROM users WHERE id = 0")
-    fun getUser(): Flow<User?>
+    @Delete
+    suspend fun delete(user: User)
 
-    @Query("SELECT * FROM users WHERE id = 0")
-    suspend fun getUserSync(): User?
+    @Query("SELECT * FROM users WHERE id = :userId")
+    fun getUser(userId: Long = 0): Flow<User?>
+
+    @Query("SELECT * FROM users WHERE id = :userId")
+    suspend fun getUserSync(userId: Long = 0): User?
 
     @Transaction
-    @Query("SELECT * FROM users")
+    @Query("SELECT * FROM users ORDER BY id ASC")
     fun getAllUsersWithTasks(): Flow<List<UserWithTasks>>
 
     @Transaction

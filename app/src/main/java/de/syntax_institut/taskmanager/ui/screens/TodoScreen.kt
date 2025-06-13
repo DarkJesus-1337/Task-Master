@@ -11,10 +11,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,6 +23,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,27 +42,33 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import de.syntax_institut.taskmanager.R
 import de.syntax_institut.taskmanager.data.model.Task
 import de.syntax_institut.taskmanager.ui.components.AddEditTaskDialog
+import de.syntax_institut.taskmanager.ui.components.FilterDialog
 import de.syntax_institut.taskmanager.ui.components.StatisticItem
 import de.syntax_institut.taskmanager.ui.components.TaskItem
 import de.syntax_institut.taskmanager.ui.viewmodel.TodoViewModel
 
 @Composable
 fun TodoScreen(
+    modifier: Modifier = Modifier,
     viewModel: TodoViewModel = viewModel()
 ) {
     val showOnlyPending by viewModel.showOnlyPendingStateFlow.collectAsState()
     val filterCategory by viewModel.filterCategoryStateFlow.collectAsState()
+    val filterUserId by viewModel.filterUserIdStateFlow.collectAsState()
     val displayedTasks by viewModel.displayedTasks.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val statistics by viewModel.taskStatistics.collectAsState()
     val overdueTasks by viewModel.overdueTasks.collectAsState()
     val todayTasks by viewModel.todayTasks.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    val allUsers by viewModel.allUsers.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingTask by remember { mutableStateOf<Task?>(null) }
+    var showFilterDialog by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
@@ -78,11 +86,20 @@ fun TodoScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Aufgaben-Übersicht",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    Column {
+                        Text(
+                            text = "Aufgaben-Übersicht",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        currentUser?.let { user ->
+                            Text(
+                                text = "Benutzer: ${user.username}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
 
                     if (statistics.total > 0) {
                         Text(
@@ -170,11 +187,12 @@ fun TodoScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = when {
                                 showOnlyPending -> "Nur offene Aufgaben"
                                 filterCategory.isNotEmpty() -> "Kategorie: $filterCategory"
+                                filterUserId != -1L -> "Benutzer: ${allUsers.find { it.id == filterUserId }?.username ?: "Unbekannt"}"
                                 else -> "Alle Aufgaben"
                             },
                             style = MaterialTheme.typography.headlineSmall
@@ -187,73 +205,81 @@ fun TodoScreen(
                     }
 
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (showOnlyPending) "Nur offene" else "Alle",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Switch(
-                            checked = showOnlyPending,
-                            onCheckedChange = { viewModel.toggleShowOnlyPending() }
-                        )
-                    }
-                }
-
-                if (categories.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.filter_list),
-                            contentDescription = "Filter",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Kategorien:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    LazyRow(
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        item {
-                            FilterChip(
-                                onClick = { viewModel.setFilterCategory("") },
-                                label = { Text("Alle") },
-                                selected = filterCategory.isEmpty()
-                            )
-                        }
-                        items(categories) { category ->
-                            FilterChip(
-                                onClick = {
-                                    if (filterCategory == category) {
-                                        viewModel.setFilterCategory("")
-                                    } else {
-                                        viewModel.setFilterCategory(category)
+                        val activeFiltersCount = listOf(
+                            showOnlyPending,
+                            filterCategory.isNotEmpty(),
+                            filterUserId != -1L
+                        ).count { it }
+
+                        BadgedBox(
+                            badge = {
+                                if (activeFiltersCount > 0) {
+                                    Badge {
+                                        Text(activeFiltersCount.toString())
                                     }
-                                },
-                                label = { Text("📁 $category") },
-                                selected = filterCategory == category
+                                }
+                            }
+                        ) {
+                            OutlinedButton(
+                                onClick = { showFilterDialog = true }
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.filter_list),
+                                    contentDescription = "Filter"
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Filter")
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (showOnlyPending) "Nur offene" else "Alle",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(
+                                checked = showOnlyPending,
+                                onCheckedChange = { viewModel.toggleShowOnlyPending() }
                             )
                         }
                     }
                 }
 
-                if (filterCategory.isNotEmpty() || showOnlyPending) {
+                if (filterCategory.isNotEmpty() || filterUserId != -1L) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (filterCategory.isNotEmpty()) {
+                            FilterChip(
+                                onClick = { viewModel.setFilterCategory("") },
+                                label = { Text("📁 $filterCategory") },
+                                selected = true
+                            )
+                        }
+                        if (filterUserId != -1L) {
+                            val userName = allUsers.find { it.id == filterUserId }?.username ?: "Unbekannt"
+                            FilterChip(
+                                onClick = { viewModel.setFilterUserId(-1L) },
+                                label = { Text("👤 $userName") },
+                                selected = true
+                            )
+                        }
+                    }
+                }
+
+                if (filterCategory.isNotEmpty() || filterUserId != -1L || showOnlyPending) {
                     Spacer(modifier = Modifier.height(8.dp))
                     TextButton(
                         onClick = { viewModel.clearFilters() }
                     ) {
-                        Text("Filter zurücksetzen")
+                        Text("Alle Filter zurücksetzen")
                     }
                 }
             }
@@ -288,6 +314,7 @@ fun TodoScreen(
                             text = when {
                                 showOnlyPending -> "🎉 Keine offenen Aufgaben!"
                                 filterCategory.isNotEmpty() -> "📁 Keine Aufgaben in dieser Kategorie"
+                                filterUserId != -1L -> "👤 Keine Aufgaben für diesen Benutzer"
                                 else -> "📝 Keine Aufgaben vorhanden"
                             },
                             style = MaterialTheme.typography.titleMedium
@@ -297,6 +324,7 @@ fun TodoScreen(
                             text = when {
                                 showOnlyPending -> "Alle Aufgaben sind erledigt - super gemacht!"
                                 filterCategory.isNotEmpty() -> "Erstelle eine Aufgabe in dieser Kategorie!"
+                                filterUserId != -1L -> "Erstelle eine Aufgabe für diesen Benutzer!"
                                 else -> "Erstelle deine erste Aufgabe!"
                             },
                             style = MaterialTheme.typography.bodyMedium,
@@ -308,8 +336,11 @@ fun TodoScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(displayedTasks, key = { it.id }) { task ->
+                            val assignedUser = allUsers.find { it.id == task.userId }
                             TaskItem(
                                 task = task,
+                                assignedUser = assignedUser,
+                                currentUserId = viewModel.currentUserIdStateFlow.collectAsState().value,
                                 onToggleCompletion = { viewModel.toggleTaskCompletion(task) },
                                 onDelete = { viewModel.deleteTask(task) },
                                 onEdit = { editingTask = task }
@@ -324,6 +355,8 @@ fun TodoScreen(
     if (showAddDialog) {
         AddEditTaskDialog(
             categories = categories,
+            users = allUsers,
+            currentUserId = viewModel.currentUserIdStateFlow.collectAsState().value,
             onDismiss = { showAddDialog = false },
             onConfirm = { task ->
                 viewModel.insertTask(task)
@@ -336,11 +369,28 @@ fun TodoScreen(
         AddEditTaskDialog(
             task = task,
             categories = categories,
+            users = allUsers,
+            currentUserId = viewModel.currentUserIdStateFlow.collectAsState().value,
             onDismiss = { editingTask = null },
             onConfirm = { updatedTask ->
                 viewModel.updateTask(updatedTask)
                 editingTask = null
             }
+        )
+    }
+
+    if (showFilterDialog) {
+        FilterDialog(
+            showOnlyPending = showOnlyPending,
+            filterCategory = filterCategory,
+            filterUserId = filterUserId,
+            categories = categories,
+            users = allUsers,
+            onDismiss = { showFilterDialog = false },
+            onShowOnlyPendingChange = { viewModel.toggleShowOnlyPending() },
+            onFilterCategoryChange = { viewModel.setFilterCategory(it) },
+            onFilterUserIdChange = { viewModel.setFilterUserId(it) },
+            onClearFilters = { viewModel.clearFilters() }
         )
     }
 }

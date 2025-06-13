@@ -3,6 +3,7 @@ package de.syntax_institut.taskmanager.ui.viewmodel
 import android.app.Application
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -24,11 +25,9 @@ import java.util.Calendar
 
 private val SHOW_ONLY_PENDING_KEY = booleanPreferencesKey("show_only_pending")
 private val FILTER_CATEGORY_KEY = stringPreferencesKey("filter_category")
-private val FILTER_PRIORITY_KEY = stringPreferencesKey("filter_priority")
+private val FILTER_USER_ID_KEY = longPreferencesKey("filter_user_id")
+private val CURRENT_USER_ID_KEY = longPreferencesKey("current_user_id")
 
-enum class TaskFilter {
-    ALL, COMPLETED, PENDING, OVERDUE, TODAY, HIGH_PRIORITY
-}
 
 class TodoViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -37,23 +36,40 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     private val taskDao = database.taskDao()
     private val userDao = database.userDao()
 
+    private val currentUserIdFlow: Flow<Long> = dataStore.data
+        .map { preferences ->
+            preferences[CURRENT_USER_ID_KEY] ?: 0L
+        }
+
+    val currentUserIdStateFlow = currentUserIdFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = 0L
+        )
+
     init {
         viewModelScope.launch {
-            val existingUser = userDao.getUserSync()
+            val existingUser = userDao.getUserSync(0L)
             if (existingUser == null) {
-                insertUser(User(
-                    id = 0,
-                    username = "Bob"
-                ))
+                val defaultUser = User(id = 0, username = "Standard Benutzer")
+                userDao.insert(defaultUser)
+                dataStore.edit { preferences ->
+                    preferences[CURRENT_USER_ID_KEY] = 0L
+                }
             }
         }
     }
 
-    val currentUser: StateFlow<User?> = userDao.getUser().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(),
-        initialValue = null
-    )
+    val currentUser: StateFlow<User?> = currentUserIdFlow
+        .map { userId ->
+            userDao.getUserSync(userId)
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = null
+        )
 
     val allUsersWithTasks: StateFlow<List<UserWithTasks>> = userDao.getAllUsersWithTasks().stateIn(
         scope = viewModelScope,
@@ -61,17 +77,13 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
         initialValue = emptyList()
     )
 
-    val currentUserWithTasks: StateFlow<UserWithTasks?> = userDao.getUserWithTasks(0L).stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(),
-        initialValue = null
-    )
-
-    private fun insertUser(user: User) {
-        viewModelScope.launch {
-            userDao.insert(user)
-        }
-    }
+    val allUsers: StateFlow<List<User>> = allUsersWithTasks
+        .map { usersWithTasks -> usersWithTasks.map { it.user } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = emptyList()
+        )
 
     private val showOnlyPendingFlow: Flow<Boolean> = dataStore.data
         .map { preferences ->
@@ -81,6 +93,11 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     private val filterCategoryFlow: Flow<String> = dataStore.data
         .map { preferences ->
             preferences[FILTER_CATEGORY_KEY] ?: ""
+        }
+
+    private val filterUserIdFlow: Flow<Long> = dataStore.data
+        .map { preferences ->
+            preferences[FILTER_USER_ID_KEY] ?: -1L
         }
 
     val showOnlyPendingStateFlow = showOnlyPendingFlow
@@ -97,63 +114,97 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = ""
         )
 
-    val allTasks: StateFlow<List<Task>> = taskDao.getAllTasks().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(),
-        initialValue = emptyList()
-    )
+    val filterUserIdStateFlow = filterUserIdFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = -1L
+        )
 
-    val completedTasks: StateFlow<List<Task>> = taskDao.getTasksByCompletionStatus(true).stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(),
-        initialValue = emptyList()
-    )
-
-    val pendingTasks: StateFlow<List<Task>> = taskDao.getTasksByCompletionStatus(false).stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(),
-        initialValue = emptyList()
-    )
-
-    val overdueTasks: StateFlow<List<Task>> = taskDao.getOverdueTasks().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(),
-        initialValue = emptyList()
-    )
-
-    val todayTasks: StateFlow<List<Task>> = run {
-        val calendar = Calendar.getInstance()
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        calendar.set(Calendar.MILLISECOND, 0)
-        val startOfDay = calendar.timeInMillis
-
-        calendar.set(Calendar.HOUR_OF_DAY, 23)
-        calendar.set(Calendar.MINUTE, 59)
-        calendar.set(Calendar.SECOND, 59)
-        calendar.set(Calendar.MILLISECOND, 999)
-        val endOfDay = calendar.timeInMillis
-
-        taskDao.getTasksDueToday(startOfDay, endOfDay).stateIn(
+    val allTasks: StateFlow<List<Task>> = allUsersWithTasks
+        .map { usersWithTasks ->
+            usersWithTasks.flatMap { it.tasks }
+                .sortedWith(
+                    compareByDescending<Task> { it.priority.ordinal }
+                        .thenBy { it.deadlineTimestamp ?: Long.MAX_VALUE }
+                        .thenBy { it.id }
+                )
+        }
+        .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(),
             initialValue = emptyList()
         )
-    }
 
-    val categories: StateFlow<List<String>> = taskDao.getAllCategories().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(),
-        initialValue = emptyList()
-    )
+    val pendingTasks: StateFlow<List<Task>> = allTasks
+        .map { tasks -> tasks.filter { !it.isCompleted } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = emptyList()
+        )
+
+    val overdueTasks: StateFlow<List<Task>> = allTasks
+        .map { tasks ->
+            tasks.filter { task ->
+                task.deadlineTimestamp?.let {
+                    DateUtils.isOverdue(it) && !task.isCompleted
+                } ?: false
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = emptyList()
+        )
+
+    val todayTasks: StateFlow<List<Task>> = allTasks
+        .map { tasks ->
+            val calendar = Calendar.getInstance()
+            calendar.set(Calendar.HOUR_OF_DAY, 0)
+            calendar.set(Calendar.MINUTE, 0)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            val startOfDay = calendar.timeInMillis
+
+            calendar.set(Calendar.HOUR_OF_DAY, 23)
+            calendar.set(Calendar.MINUTE, 59)
+            calendar.set(Calendar.SECOND, 59)
+            calendar.set(Calendar.MILLISECOND, 999)
+            val endOfDay = calendar.timeInMillis
+
+            tasks.filter { task ->
+                task.deadlineTimestamp?.let { deadline ->
+                    deadline in startOfDay..endOfDay && !task.isCompleted
+                } ?: false
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = emptyList()
+        )
+
+    val categories: StateFlow<List<String>> = allTasks
+        .map { tasks ->
+            tasks.map { it.category }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .sorted()
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = emptyList()
+        )
 
     val displayedTasks: StateFlow<List<Task>> = combine(
         showOnlyPendingStateFlow,
         filterCategoryStateFlow,
+        filterUserIdStateFlow,
         allTasks,
         pendingTasks
-    ) { showOnlyPending: Boolean, filterCategory: String, all: List<Task>, pending: List<Task> ->
+    ) { showOnlyPending: Boolean, filterCategory: String, filterUserId: Long, all: List<Task>, pending: List<Task> ->
         var tasks = if (showOnlyPending) {
             pending.filter { !it.isCompleted }
         } else {
@@ -162,6 +213,10 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
 
         if (filterCategory.isNotEmpty()) {
             tasks = tasks.filter { it.category == filterCategory }
+        }
+
+        if (filterUserId != -1L) {
+            tasks = tasks.filter { it.userId == filterUserId }
         }
 
         tasks
@@ -214,10 +269,19 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setFilterUserId(userId: Long) {
+        viewModelScope.launch {
+            dataStore.edit { preferences ->
+                preferences[FILTER_USER_ID_KEY] = if (userId == -1L) -1L else userId
+            }
+        }
+    }
+
     fun clearFilters() {
         viewModelScope.launch {
             dataStore.edit { preferences ->
                 preferences[FILTER_CATEGORY_KEY] = ""
+                preferences[FILTER_USER_ID_KEY] = -1L
                 preferences[SHOW_ONLY_PENDING_KEY] = false
             }
         }
@@ -225,14 +289,7 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun insertTask(task: Task) {
         viewModelScope.launch {
-            val taskWithUserId = task.copy(userId = 0L)
-            taskDao.insert(taskWithUserId)
-        }
-    }
-
-    fun insertTask(title: String) {
-        viewModelScope.launch {
-            taskDao.insert(Task(title = title, userId = 0L))
+            taskDao.insert(task)
         }
     }
 
@@ -255,26 +312,6 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
                 completedAt = if (!task.isCompleted) System.currentTimeMillis() else null
             )
             taskDao.update(updatedTask)
-        }
-    }
-
-    fun getTasksByFilter(filter: TaskFilter): StateFlow<List<Task>> {
-        return when (filter) {
-            TaskFilter.ALL -> allTasks
-            TaskFilter.COMPLETED -> completedTasks
-            TaskFilter.PENDING -> pendingTasks
-            TaskFilter.OVERDUE -> overdueTasks
-            TaskFilter.TODAY -> todayTasks
-            TaskFilter.HIGH_PRIORITY -> combine(
-                taskDao.getTasksByPriority(TaskPriority.HIGH),
-                taskDao.getTasksByPriority(TaskPriority.URGENT)
-            ) { high: List<Task>, urgent: List<Task> ->
-                (high + urgent).sortedBy { it.deadlineTimestamp ?: Long.MAX_VALUE }
-            }.stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(),
-                initialValue = emptyList()
-            )
         }
     }
 }
