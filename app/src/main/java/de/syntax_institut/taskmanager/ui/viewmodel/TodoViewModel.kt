@@ -10,6 +10,7 @@ import de.syntax_institut.taskmanager.data.database.TaskDatabase
 import de.syntax_institut.taskmanager.data.model.Task
 import de.syntax_institut.taskmanager.data.model.TaskPriority
 import de.syntax_institut.taskmanager.data.model.User
+import de.syntax_institut.taskmanager.data.model.UserWithTasks
 import de.syntax_institut.taskmanager.dataStore
 import de.syntax_institut.taskmanager.utils.DateUtils
 import kotlinx.coroutines.flow.Flow
@@ -49,6 +50,18 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     val currentUser: StateFlow<User?> = userDao.getUser().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(),
+        initialValue = null
+    )
+
+    val allUsersWithTasks: StateFlow<List<UserWithTasks>> = userDao.getAllUsersWithTasks().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(),
+        initialValue = emptyList()
+    )
+
+    val currentUserWithTasks: StateFlow<UserWithTasks?> = userDao.getUserWithTasks(0L).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(),
         initialValue = null
@@ -212,13 +225,14 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun insertTask(task: Task) {
         viewModelScope.launch {
-            taskDao.insert(task)
+            val taskWithUserId = task.copy(userId = 0L)
+            taskDao.insert(taskWithUserId)
         }
     }
 
     fun insertTask(title: String) {
         viewModelScope.launch {
-            taskDao.insert(Task(title = title))
+            taskDao.insert(Task(title = title, userId = 0L))
         }
     }
 

@@ -14,7 +14,8 @@ data class Task(
     val priority: TaskPriority = TaskPriority.MEDIUM,
     val category: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val completedAt: Long? = null
+    val completedAt: Long? = null,
+    val userId: Long = 0
 )
 
 enum class TaskPriority {

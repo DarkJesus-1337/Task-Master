@@ -9,7 +9,7 @@ import de.syntax_institut.taskmanager.data.model.User
 
 @Database(
     entities = [Task::class, User::class],
-    version = 3,
+    version = 4,
     exportSchema = false)
 abstract class TaskDatabase : RoomDatabase() {
 
