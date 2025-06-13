@@ -1,5 +1,6 @@
 package de.syntax_institut.taskmanager
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,10 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
-import android.content.Context
 import de.syntax_institut.taskmanager.ui.screens.TodoScreen
 
-// Datastore Extension
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "todo_settings")
 
 class MainActivity : ComponentActivity() {

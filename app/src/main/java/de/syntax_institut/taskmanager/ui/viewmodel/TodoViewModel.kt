@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import de.syntax_institut.taskmanager.data.database.TaskDatabase
 import de.syntax_institut.taskmanager.data.model.Task
 import de.syntax_institut.taskmanager.data.model.TaskPriority
+import de.syntax_institut.taskmanager.data.model.User
 import de.syntax_institut.taskmanager.dataStore
 import de.syntax_institut.taskmanager.utils.DateUtils
 import kotlinx.coroutines.flow.Flow
@@ -31,7 +32,33 @@ enum class TaskFilter {
 class TodoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val dataStore = application.dataStore
-    private val dao = TaskDatabase.getDatabase(application.applicationContext).taskDao()
+    private val database = TaskDatabase.getDatabase(application.applicationContext)
+    private val taskDao = database.taskDao()
+    private val userDao = database.userDao()
+
+    init {
+        viewModelScope.launch {
+            val existingUser = userDao.getUserSync()
+            if (existingUser == null) {
+                insertUser(User(
+                    id = 0,
+                    username = "Bob"
+                ))
+            }
+        }
+    }
+
+    val currentUser: StateFlow<User?> = userDao.getUser().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(),
+        initialValue = null
+    )
+
+    private fun insertUser(user: User) {
+        viewModelScope.launch {
+            userDao.insert(user)
+        }
+    }
 
     private val showOnlyPendingFlow: Flow<Boolean> = dataStore.data
         .map { preferences ->
@@ -57,25 +84,25 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = ""
         )
 
-    val allTasks: StateFlow<List<Task>> = dao.getAllTasks().stateIn(
+    val allTasks: StateFlow<List<Task>> = taskDao.getAllTasks().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(),
         initialValue = emptyList()
     )
 
-    val completedTasks: StateFlow<List<Task>> = dao.getTasksByCompletionStatus(true).stateIn(
+    val completedTasks: StateFlow<List<Task>> = taskDao.getTasksByCompletionStatus(true).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(),
         initialValue = emptyList()
     )
 
-    val pendingTasks: StateFlow<List<Task>> = dao.getTasksByCompletionStatus(false).stateIn(
+    val pendingTasks: StateFlow<List<Task>> = taskDao.getTasksByCompletionStatus(false).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(),
         initialValue = emptyList()
     )
 
-    val overdueTasks: StateFlow<List<Task>> = dao.getOverdueTasks().stateIn(
+    val overdueTasks: StateFlow<List<Task>> = taskDao.getOverdueTasks().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(),
         initialValue = emptyList()
@@ -95,14 +122,14 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
         calendar.set(Calendar.MILLISECOND, 999)
         val endOfDay = calendar.timeInMillis
 
-        dao.getTasksDueToday(startOfDay, endOfDay).stateIn(
+        taskDao.getTasksDueToday(startOfDay, endOfDay).stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(),
             initialValue = emptyList()
         )
     }
 
-    val categories: StateFlow<List<String>> = dao.getAllCategories().stateIn(
+    val categories: StateFlow<List<String>> = taskDao.getAllCategories().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(),
         initialValue = emptyList()
@@ -185,25 +212,25 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun insertTask(task: Task) {
         viewModelScope.launch {
-            dao.insert(task)
+            taskDao.insert(task)
         }
     }
 
     fun insertTask(title: String) {
         viewModelScope.launch {
-            dao.insert(Task(title = title))
+            taskDao.insert(Task(title = title))
         }
     }
 
     fun deleteTask(task: Task) {
         viewModelScope.launch {
-            dao.delete(task)
+            taskDao.delete(task)
         }
     }
 
     fun updateTask(task: Task) {
         viewModelScope.launch {
-            dao.update(task)
+            taskDao.update(task)
         }
     }
 
@@ -213,7 +240,7 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
                 isCompleted = !task.isCompleted,
                 completedAt = if (!task.isCompleted) System.currentTimeMillis() else null
             )
-            dao.update(updatedTask)
+            taskDao.update(updatedTask)
         }
     }
 
@@ -225,8 +252,8 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
             TaskFilter.OVERDUE -> overdueTasks
             TaskFilter.TODAY -> todayTasks
             TaskFilter.HIGH_PRIORITY -> combine(
-                dao.getTasksByPriority(TaskPriority.HIGH),
-                dao.getTasksByPriority(TaskPriority.URGENT)
+                taskDao.getTasksByPriority(TaskPriority.HIGH),
+                taskDao.getTasksByPriority(TaskPriority.URGENT)
             ) { high: List<Task>, urgent: List<Task> ->
                 (high + urgent).sortedBy { it.deadlineTimestamp ?: Long.MAX_VALUE }
             }.stateIn(
