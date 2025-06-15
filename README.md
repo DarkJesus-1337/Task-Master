@@ -54,13 +54,5 @@ data class Task(
 )
 ```
 
-## Lizenz
 
-Dieses Projekt steht unter der MIT-Lizenz. Weitere Informationen siehe [LICENSE](LICENSE).
-
-## Kontakt
-
-Bei Fragen oder Anregungen:  
-Sebastian Dendtler  
-sebastian.dendtler@email.de
 
